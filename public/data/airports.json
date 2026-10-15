@@ -1,0 +1,75 @@
+
+[
+  {
+    "code": "BBI",
+    "name": "Biju Patnaik International Airport",
+    "city": "Bhubaneswar",
+    "country": "India",
+    "lat": 20.2444,
+    "lon": 85.8178
+  },
+  {
+    "code": "CCU",
+    "name": "Netaji Subhas Chandra Bose International Airport",
+    "city": "Kolkata",
+    "country": "India",
+    "lat": 22.6547,
+    "lon": 88.4467
+  },
+  {
+    "code": "VTZ",
+    "name": "Visakhapatnam International Airport",
+    "city": "Visakhapatnam",
+    "country": "India",
+    "lat": 17.7212,
+    "lon": 83.2245
+  },
+  {
+    "code": "RPR",
+    "name": "Swami Vivekananda Airport",
+    "city": "Raipur",
+    "country": "India",
+    "lat": 21.1804,
+    "lon": 81.7388
+  },
+  {
+    "code": "LKO",
+    "name": "Chaudhary Charan Singh International Airport",
+    "city": "Lucknow",
+    "country": "India",
+    "lat": 26.7606,
+    "lon": 80.8893
+  },
+  {
+    "code": "HYD",
+    "name": "Rajiv Gandhi International Airport",
+    "city": "Hyderabad",
+    "country": "India",
+    "lat": 17.2403,
+    "lon": 78.4294
+  },
+  {
+    "code": "BLR",
+    "name": "Kempegowda International Airport",
+    "city": "Bengaluru",
+    "country": "India",
+    "lat": 13.1986,
+    "lon": 77.7066
+  },
+  {
+    "code": "DEL",
+    "name": "Indira Gandhi International Airport",
+    "city": "New Delhi",
+    "country": "India",
+    "lat": 28.5562,
+    "lon": 77.1
+  },
+  {
+    "code": "BOM",
+    "name": "Chhatrapati Shivaji Maharaj International Airport",
+    "city": "Mumbai",
+    "country": "India",
+    "lat": 19.0896,
+    "lon": 72.8656
+  }
+]

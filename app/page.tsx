@@ -2,36 +2,22 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import AirportMap from "./components/AirportMap";
 
 const STORAGE_KEY = "flytide-flights-v1";
-
 const DURATIONS = [5, 15, 25, 45, 60, 90, 120, 180];
+const KM_PER_MINUTE = 830 / 60;
 
-const AIRPORTS = [
-  { code: "BBI", name: "Bhubaneswar" },
-  { code: "DEL", name: "New Delhi" },
-  { code: "BOM", name: "Mumbai" },
-  { code: "BLR", name: "Bengaluru" },
-  { code: "HYD", name: "Hyderabad" },
-];
+type Airport = {
+  code: string;
+  name: string;
+  city: string;
+  country: string;
+  lat: number;
+  lon: number;
+};
 
-const DESTINATIONS = [
-  { code: "CCU", name: "Kolkata", distance: 364, image: "photo-1571679654681-ba01b9e1e117" },
-  { code: "VTZ", name: "Visakhapatnam", distance: 385, image: "photo-1500530855697-b586d89ba3ee" },
-  { code: "RPR", name: "Raipur", distance: 450, image: "photo-1519608487953-e999c86e7455" },
-  { code: "LKO", name: "Lucknow", distance: 750, image: "photo-1519501025264-65ba15a82390" },
-  { code: "HYD", name: "Hyderabad", distance: 840, image: "photo-1517248135467-4c7edcad34c4" },
-  { code: "BLR", name: "Bengaluru", distance: 1190, image: "photo-1519608487953-e999c86e7455" },
-  { code: "DEL", name: "New Delhi", distance: 1270, image: "photo-1519501025264-65ba15a82390" },
-  { code: "BOM", name: "Mumbai", distance: 1370, image: "photo-1519608487953-e999c86e7455" },
-];
-
-const TIERS = [
-  { name: "First Wings", threshold: 1000, symbol: "✦" },
-  { name: "Sky Explorer", threshold: 5000, symbol: "✈" },
-  { name: "Cloud Navigator", threshold: 20000, symbol: "♧" },
-  { name: "Earth Circler", threshold: 40075, symbol: "◎" },
-];
+type Destination = Airport & { distance: number };
 
 type Flight = {
   id: string;
@@ -46,11 +32,33 @@ type Flight = {
   note: string;
 };
 
+const TIERS = [
+  { name: "First Wings", threshold: 1000, symbol: "✦" },
+  { name: "Sky Explorer", threshold: 5000, symbol: "✈" },
+  { name: "Cloud Navigator", threshold: 20000, symbol: "♧" },
+  { name: "Earth Circler", threshold: 40075, symbol: "◎" },
+];
+
+function distanceKm(a: Airport, b: Airport) {
+  const radians = (degrees: number) => (degrees * Math.PI) / 180;
+  const lat1 = radians(a.lat);
+  const lat2 = radians(b.lat);
+  const deltaLat = radians(b.lat - a.lat);
+  const deltaLon = radians(b.lon - a.lon);
+
+  const value =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+
+  return Math.round(
+    6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value))
+  );
+}
+
 function readFlights(): Flight[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) return [];
-
     const parsed: unknown = JSON.parse(data);
     if (!Array.isArray(parsed)) return [];
 
@@ -70,11 +78,9 @@ function readFlights(): Flight[] {
 
 function formatTime(ms: number) {
   const seconds = Math.ceil(Math.max(0, ms) / 1000);
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-
-  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+  return [Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60), seconds % 60]
+    .map((n) => String(n).padStart(2, "0"))
+    .join(":");
 }
 
 function formatDate(timestamp: number) {
@@ -85,29 +91,34 @@ function formatDate(timestamp: number) {
 }
 
 function routeImage(code: string) {
-  const destination = DESTINATIONS.find((item) => item.code === code);
-  return destination
-    ? `https://images.unsplash.com/${destination.image}?auto=format&fit=crop&w=700&q=80`
-    : "";
+  const images: Record<string, string> = {
+    BBI: "photo-1436491865332-7a61a109cc05",
+    CCU: "photo-1571679654681-ba01b9e1e117",
+    VTZ: "photo-1500530855697-b586d89ba3ee",
+    RPR: "photo-1519608487953-e999c86e7455",
+    LKO: "photo-1519501025264-65ba15a82390",
+    HYD: "photo-1517248135467-4c7edcad34c4",
+    BLR: "photo-1519608487953-e999c86e7455",
+    DEL: "photo-1519501025264-65ba15a82390",
+    BOM: "photo-1474302770737-173ee21bab63",
+  };
+  const image = images[code] ?? images.BBI;
+  return `https://images.unsplash.com/${image}?auto=format&fit=crop&w=700&q=80`;
 }
 
 function Icon({
   children,
-  className = "",
 }: {
   children: React.ReactNode;
-  className?: string;
 }) {
-  return (
-    <span aria-hidden="true" className={className}>
-      {children}
-    </span>
-  );
+  return <span aria-hidden="true">{children}</span>;
 }
 
 export default function Home() {
   const [duration, setDuration] = useState(45);
   const [airport, setAirport] = useState("BBI");
+  const [airports, setAirports] = useState<Airport[]>([]);
+  const [airportsError, setAirportsError] = useState("");
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [showDestinations, setShowDestinations] = useState(false);
   const [flights, setFlights] = useState<Flight[]>([]);
@@ -119,14 +130,57 @@ export default function Home() {
   const [mobileMenu, setMobileMenu] = useState(false);
 
   useEffect(() => {
-    const time = Date.now();
-    const saved = readFlights().map((flight) =>
-      flight.status === "flying" && time >= flight.endTime
-        ? { ...flight, status: "landed" as const }
-        : flight
-    );
+    let cancelled = false;
 
-    setFlights(saved);
+    async function loadAirports() {
+      try {
+        const response = await fetch("/data/airports.json");
+        if (!response.ok) throw new Error("Could not load airport data.");
+
+        const data: unknown = await response.json();
+        if (
+          !Array.isArray(data) ||
+          !data.every(
+            (item) =>
+              item &&
+              typeof item.code === "string" &&
+              typeof item.name === "string" &&
+              typeof item.city === "string" &&
+              Number.isFinite(item.lat) &&
+              Number.isFinite(item.lon)
+          )
+        ) {
+          throw new Error("Airport data has an invalid format.");
+        }
+
+        if (!cancelled) {
+          setAirports(data as Airport[]);
+          setAirportsError("");
+        }
+      } catch {
+        if (!cancelled) {
+          setAirportsError(
+            "Airport data could not be loaded. Check public/data/airports.json."
+          );
+        }
+      }
+    }
+
+    loadAirports();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const time = Date.now();
+    setFlights(
+      readFlights().map((flight) =>
+        flight.status === "flying" && time >= flight.endTime
+          ? { ...flight, status: "landed" as const }
+          : flight
+      )
+    );
     setNow(time);
     setHydrated(true);
   }, []);
@@ -136,7 +190,7 @@ export default function Home() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(flights));
     } catch {
-      // Keep the current session usable if browser storage is unavailable.
+      // The session remains usable if browser storage is unavailable.
     }
   }, [flights, hydrated]);
 
@@ -146,21 +200,15 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated || now === 0) return;
+    if (!hydrated || !now) return;
 
-    setFlights((previous) => {
-      const completed = previous.find(
-        (flight) => flight.status === "flying" && now >= flight.endTime
-      );
-
-      if (completed) setSelectedFlightId(completed.id);
-
-      return previous.map((flight) =>
+    setFlights((previous) =>
+      previous.map((flight) =>
         flight.status === "flying" && now >= flight.endTime
           ? { ...flight, status: "landed" as const }
           : flight
-      );
-    });
+      )
+    );
   }, [now, hydrated]);
 
   const activeFlight = flights.find((flight) => flight.status === "flying");
@@ -172,6 +220,19 @@ export default function Home() {
     (viewedFlight.status === "landed" ||
       (viewedFlight.status === "flying" && now >= viewedFlight.endTime));
 
+  const departure = airports.find((item) => item.code === airport);
+  const destinations: Destination[] = departure
+    ? airports
+        .filter((item) => item.code !== airport)
+        .map((item) => ({ ...item, distance: distanceKm(departure, item) }))
+        .sort((a, b) => a.distance - b.distance)
+    : [];
+
+  const maxDistance = duration * KM_PER_MINUTE;
+  const reachable = destinations.filter(
+    (item) => item.distance <= maxDistance
+  );
+
   const miles = flights
     .filter((flight) => flight.status === "landed")
     .reduce((sum, flight) => sum + flight.distance, 0);
@@ -182,11 +243,6 @@ export default function Home() {
     .filter((f) => f.status === "landed")
     .reduce((sum, f) => sum + f.duration, 0);
 
-  const maxDistance = duration * 13.9;
-  const reachable = DESTINATIONS.filter(
-    (item) => item.code !== airport && item.distance <= maxDistance
-  );
-  const departure = AIRPORTS.find((item) => item.code === airport)!;
   const currentTier = [...TIERS].reverse().find((tier) => miles >= tier.threshold);
   const nextTier = TIERS.find((tier) => miles < tier.threshold);
   const tierProgress = nextTier
@@ -194,7 +250,7 @@ export default function Home() {
     : 100;
 
   const bookFlight = useCallback(() => {
-    const destination = DESTINATIONS.find((item) => item.code === selectedCode);
+    const destination = destinations.find((item) => item.code === selectedCode);
     if (!destination || activeFlight) return;
 
     const startTime = Date.now();
@@ -202,7 +258,7 @@ export default function Home() {
       id: crypto.randomUUID(),
       origin: airport,
       destination: destination.code,
-      destinationName: destination.name,
+      destinationName: destination.city,
       duration,
       distance: destination.distance,
       startTime,
@@ -217,7 +273,7 @@ export default function Home() {
     setShowDestinations(false);
     setPage("Flight Deck");
     setNow(startTime);
-  }, [activeFlight, airport, duration, selectedCode]);
+  }, [activeFlight, airport, destinations, duration, selectedCode]);
 
   function divertFlight(id: string) {
     setFlights((previous) =>
@@ -334,11 +390,9 @@ export default function Home() {
             >
               ☰
             </button>
-
             <div className="hidden text-xs tracking-[0.2em] text-slate-500 md:block">
               YOUR PERSONAL FLIGHT DECK
             </div>
-
             <div className="ml-auto flex items-center gap-3">
               <span className="text-amber-300">✧</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-900 text-sm font-semibold">
@@ -366,9 +420,7 @@ export default function Home() {
                     <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
                       Leave the noise.
                       <br />
-                      <span className="text-amber-300">
-                        Find your altitude.
-                      </span>
+                      <span className="text-amber-300">Find your altitude.</span>
                     </h1>
                     <p className="mt-4 max-w-lg text-sm leading-6 text-slate-300">
                       Every focus session is a flight. Pick your destination,
@@ -382,16 +434,9 @@ export default function Home() {
                     <section className="rounded-2xl border border-white/[0.09] bg-[#0a1323] p-5 md:p-7">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <h2 className="text-xl font-semibold">
-                          <Icon className="mr-3 text-amber-300">✈</Icon>
-                          Plan your flight
+                          <Icon>✈</Icon> Plan your flight
                         </h2>
-                        <span
-                          className={`rounded-full px-3 py-1.5 text-xs ${
-                            activeFlight
-                              ? "bg-emerald-400/10 text-emerald-300"
-                              : "bg-emerald-400/10 text-emerald-300"
-                          }`}
-                        >
+                        <span className="rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300">
                           ● {activeFlight ? "IN FLIGHT" : "READY FOR DEPARTURE"}
                         </span>
                       </div>
@@ -408,18 +453,16 @@ export default function Home() {
                             }}
                             className="mt-2 w-full rounded-xl border border-white/10 bg-[#101c30] px-3 py-3 text-sm text-white outline-none focus:border-amber-300 disabled:opacity-50"
                           >
-                            {AIRPORTS.map((item) => (
+                            {airports.map((item) => (
                               <option key={item.code} value={item.code}>
-                                {item.code} · {item.name}
+                                {item.code} · {item.city}
                               </option>
                             ))}
                           </select>
                         </label>
 
                         <div>
-                          <p className="mb-2 text-sm text-slate-400">
-                            Focus duration
-                          </p>
+                          <p className="mb-2 text-sm text-slate-400">Focus duration</p>
                           <div className="grid grid-cols-4 gap-2">
                             {DURATIONS.map((minutes) => (
                               <button
@@ -431,7 +474,7 @@ export default function Home() {
                                 }}
                                 className={`rounded-xl border px-2 py-3 text-xs transition md:text-sm ${
                                   duration === minutes
-                                    ? "border-amber-300 bg-amber-300 text-slate-950 font-semibold"
+                                    ? "border-amber-300 bg-amber-300 font-semibold text-slate-950"
                                     : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/30"
                                 }`}
                               >
@@ -444,11 +487,9 @@ export default function Home() {
 
                       <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm text-slate-400">
-                            Available destinations
-                          </p>
+                          <p className="text-sm text-slate-400">Available destinations</p>
                           <p className="mt-1 text-xs text-slate-500">
-                            From {departure.name} · Up to{" "}
+                            From {departure?.city ?? airport} · Up to{" "}
                             {Math.round(maxDistance).toLocaleString("en-IN")} km
                           </p>
                         </div>
@@ -460,21 +501,25 @@ export default function Home() {
                         </button>
                       </div>
 
-                      {showDestinations && (
+                      {airportsError && (
+                        <p className="mt-4 rounded-xl border border-red-400/20 p-4 text-sm text-red-300">
+                          {airportsError}
+                        </p>
+                      )}
+
+                      {showDestinations && !airportsError && (
                         <>
                           {reachable.length === 0 ? (
                             <p className="mt-4 rounded-xl border border-white/10 p-4 text-sm text-slate-400">
-                              No sample routes are available at this duration.
-                              Try a longer flight.
+                              No airports are within this range. Try a longer
+                              focus session.
                             </p>
                           ) : (
-                            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                               {reachable.map((destination) => (
                                 <button
                                   key={destination.code}
-                                  onClick={() =>
-                                    setSelectedCode(destination.code)
-                                  }
+                                  onClick={() => setSelectedCode(destination.code)}
                                   className={`overflow-hidden rounded-xl border text-left transition ${
                                     selectedCode === destination.code
                                       ? "border-amber-300 bg-amber-300/[0.08]"
@@ -492,13 +537,13 @@ export default function Home() {
                                       {destination.code}
                                     </span>
                                     <p className="mt-2 truncate text-sm font-medium">
-                                      {destination.name}
+                                      {destination.city}
                                     </p>
                                     <p className="mt-1 text-xs text-slate-400">
-                                      {destination.distance} km
+                                      {destination.distance.toLocaleString("en-IN")} km
                                     </p>
                                     <p className="mt-1 text-[11px] text-slate-500">
-                                      {Math.ceil(destination.distance / 13.9)} min
+                                      {Math.ceil(destination.distance / KM_PER_MINUTE)} min focus
                                     </p>
                                   </div>
                                 </button>
@@ -509,9 +554,7 @@ export default function Home() {
                           {selectedCode && (
                             <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-300/20 bg-amber-300/[0.04] p-4">
                               <div>
-                                <p className="text-xs text-slate-400">
-                                  Selected destination
-                                </p>
+                                <p className="text-xs text-slate-400">Selected destination</p>
                                 <p className="mt-1 font-semibold">
                                   {airport} → {selectedCode}
                                 </p>
@@ -534,7 +577,7 @@ export default function Home() {
                           onClick={() => setShowDestinations(true)}
                           className="mt-6 w-full rounded-xl bg-amber-300 px-5 py-4 text-sm font-semibold text-slate-950 transition hover:bg-amber-200 disabled:opacity-50"
                         >
-                          ✈ Find my destination <span className="ml-2">→</span>
+                          ✈ Find my destination →
                         </button>
                       )}
                     </section>
@@ -544,8 +587,7 @@ export default function Home() {
                         <div
                           className="absolute inset-0 bg-cover bg-center opacity-30"
                           style={{
-                            backgroundImage:
-                              "linear-gradient(90deg, #07101f, transparent), url('https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1200&q=80')",
+                            backgroundImage: `linear-gradient(90deg, #07101f, transparent), url('${routeImage(activeFlight.destination)}')`,
                           }}
                         />
                         <div className="relative p-5 md:p-7">
@@ -555,28 +597,24 @@ export default function Home() {
                               ● IN FLIGHT
                             </span>
                           </div>
-
                           <div className="mt-7 flex flex-wrap items-end justify-between gap-5">
                             <div>
                               <p className="text-3xl font-semibold md:text-4xl">
-                                {activeFlight.origin}{" "}
-                                <span className="text-amber-300">→</span>{" "}
+                                {activeFlight.origin} <span className="text-amber-300">→</span>{" "}
                                 {activeFlight.destination}
                               </p>
                               <p className="mt-2 text-sm text-slate-300">
-                                {departure.name} → {activeFlight.destinationName}
+                                {airports.find((a) => a.code === activeFlight.origin)?.city} →{" "}
+                                {activeFlight.destinationName}
                               </p>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-[#081221]/80 p-4">
-                              <p className="text-xs text-slate-400">
-                                TIME REMAINING
-                              </p>
+                              <p className="text-xs text-slate-400">TIME REMAINING</p>
                               <p className="mt-1 text-3xl font-semibold tabular-nums text-amber-300">
                                 {formatTime(activeFlight.endTime - now)}
                               </p>
                             </div>
                           </div>
-
                           <div className="mt-6 grid grid-cols-3 gap-3 border-t border-white/10 pt-5">
                             <div>
                               <p className="text-xs text-slate-500">Duration</p>
@@ -589,14 +627,13 @@ export default function Home() {
                             <div>
                               <p className="text-xs text-slate-500">Arrival</p>
                               <p className="mt-1 text-sm">
-                                {new Date(activeFlight.endTime).toLocaleTimeString(
-                                  "en-IN",
-                                  { hour: "2-digit", minute: "2-digit" }
-                                )}
+                                {new Date(activeFlight.endTime).toLocaleTimeString("en-IN", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
                               </p>
                             </div>
                           </div>
-
                           <button
                             onClick={() => openFlight(activeFlight)}
                             className="mt-5 w-full rounded-xl border border-amber-300/70 bg-[#0b1422]/70 px-4 py-3 text-sm font-medium text-amber-300 hover:bg-amber-300/10"
@@ -617,11 +654,9 @@ export default function Home() {
                           View all →
                         </button>
                       </div>
-
                       {flights.length === 0 ? (
                         <p className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">
-                          Your first flight will appear here. Pick a destination
-                          and start focusing.
+                          Your first flight will appear here.
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -633,28 +668,23 @@ export default function Home() {
                             >
                               <div
                                 className="h-12 w-14 shrink-0 rounded-lg bg-cover bg-center"
-                                style={{
-                                  backgroundImage: `url('${routeImage(flight.destination)}')`,
-                                }}
+                                style={{ backgroundImage: `url('${routeImage(flight.destination)}')` }}
                               />
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium">
                                   {flight.origin} → {flight.destination}
                                 </p>
                                 <p className="mt-1 truncate text-xs text-slate-500">
-                                  {flight.destinationName} · {flight.duration} min ·{" "}
-                                  {flight.distance} km
+                                  {flight.destinationName} · {flight.duration} min · {flight.distance} km
                                 </p>
                               </div>
-                              <span
-                                className={`rounded-full px-2 py-1 text-[10px] ${
-                                  flight.status === "landed"
-                                    ? "bg-emerald-400/10 text-emerald-300"
-                                    : flight.status === "diverted"
-                                      ? "bg-red-400/10 text-red-300"
-                                      : "bg-amber-400/10 text-amber-300"
-                                }`}
-                              >
+                              <span className={`rounded-full px-2 py-1 text-[10px] ${
+                                flight.status === "landed"
+                                  ? "bg-emerald-400/10 text-emerald-300"
+                                  : flight.status === "diverted"
+                                    ? "bg-red-400/10 text-red-300"
+                                    : "bg-amber-400/10 text-amber-300"
+                              }`}>
                                 {flight.status.toUpperCase()}
                               </span>
                             </button>
@@ -666,10 +696,7 @@ export default function Home() {
 
                   <aside className="space-y-5">
                     <section className="rounded-2xl border border-white/[0.09] bg-[#0a1323] p-5 md:p-6">
-                      <h2 className="font-semibold">
-                        <Icon className="mr-2 text-amber-300">✈</Icon>
-                        Your journey
-                      </h2>
+                      <h2 className="font-semibold">✈ Your journey</h2>
                       <div className="mx-auto my-5 flex h-44 w-44 flex-col items-center justify-center rounded-full border-[9px] border-[#23334c] border-t-amber-400 border-r-amber-400/50">
                         <span className="text-3xl text-amber-300">✈</span>
                         <p className="mt-3 text-xs text-slate-400">TOTAL MILES</p>
@@ -680,15 +707,11 @@ export default function Home() {
                       </div>
                       <div className="grid grid-cols-2 divide-x divide-white/10 border-t border-white/10 pt-4">
                         <div className="px-2">
-                          <p className="text-xs text-slate-400">
-                            <span className="text-emerald-300">●</span> Landed
-                          </p>
+                          <p className="text-xs text-slate-400">● Landed</p>
                           <p className="mt-1 text-xl">{landedCount}</p>
                         </div>
                         <div className="px-4">
-                          <p className="text-xs text-slate-400">
-                            <span className="text-red-300">●</span> Diverted
-                          </p>
+                          <p className="text-xs text-slate-400">● Diverted</p>
                           <p className="mt-1 text-xl">{divertedCount}</p>
                         </div>
                       </div>
@@ -699,7 +722,6 @@ export default function Home() {
                         <h2 className="font-semibold">Your membership</h2>
                         <span className="text-xl text-amber-300">♛</span>
                       </div>
-
                       <div className="mt-5 flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-amber-300">
@@ -711,22 +733,17 @@ export default function Home() {
                               : "Every horizon unlocked"}
                           </p>
                         </div>
-                        <span className="text-2xl text-amber-300">
-                          {currentTier?.symbol ?? "✦"}
-                        </span>
+                        <span className="text-2xl text-amber-300">{currentTier?.symbol ?? "✦"}</span>
                       </div>
-
                       <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#23334c]">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all"
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-300"
                           style={{ width: `${tierProgress}%` }}
                         />
                       </div>
                       <p className="mt-2 text-xs text-slate-500">
-                        {miles.toLocaleString("en-IN")} /{" "}
-                        {(nextTier?.threshold ?? 40075).toLocaleString("en-IN")} km
+                        {miles.toLocaleString("en-IN")} / {(nextTier?.threshold ?? 40075).toLocaleString("en-IN")} km
                       </p>
-
                       <div className="mt-5 space-y-1">
                         {TIERS.map((tier) => {
                           const unlocked = miles >= tier.threshold;
@@ -734,18 +751,12 @@ export default function Home() {
                             <div
                               key={tier.name}
                               className={`flex items-center gap-3 rounded-xl border p-3 ${
-                                unlocked
-                                  ? "border-amber-300/20 bg-amber-300/[0.04]"
-                                  : "border-transparent"
+                                unlocked ? "border-amber-300/20 bg-amber-300/[0.04]" : "border-transparent"
                               }`}
                             >
-                              <span
-                                className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                                  unlocked
-                                    ? "bg-amber-300 text-slate-950"
-                                    : "bg-[#20304a] text-slate-400"
-                                }`}
-                              >
+                              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                                unlocked ? "bg-amber-300 text-slate-950" : "bg-[#20304a] text-slate-400"
+                              }`}>
                                 {tier.symbol}
                               </span>
                               <div className="min-w-0 flex-1">
@@ -764,16 +775,11 @@ export default function Home() {
                     </section>
 
                     <section className="rounded-2xl border border-white/[0.09] bg-[#0a1323] p-5">
-                      <div className="flex items-center justify-between">
-                        <h2 className="font-semibold">Quick stats</h2>
-                        <span className="text-amber-300">◷</span>
-                      </div>
+                      <h2 className="font-semibold">Quick stats</h2>
                       <div className="mt-4 grid grid-cols-2 gap-3">
                         <div className="rounded-xl bg-white/[0.03] p-3">
                           <p className="text-xs text-slate-500">Focus time</p>
-                          <p className="mt-2 text-xl font-semibold">
-                            {Math.floor(totalFocus / 60)}h {totalFocus % 60}m
-                          </p>
+                          <p className="mt-2 text-xl font-semibold">{Math.floor(totalFocus / 60)}h {totalFocus % 60}m</p>
                         </div>
                         <div className="rounded-xl bg-white/[0.03] p-3">
                           <p className="text-xs text-slate-500">Flights landed</p>
@@ -782,9 +788,7 @@ export default function Home() {
                         <div className="rounded-xl bg-white/[0.03] p-3">
                           <p className="text-xs text-slate-500">Avg. session</p>
                           <p className="mt-2 text-xl font-semibold">
-                            {landedCount
-                              ? Math.round(totalFocus / landedCount)
-                              : 0}{" "}
+                            {landedCount ? Math.round(totalFocus / landedCount) : 0}{" "}
                             <span className="text-xs font-normal text-slate-400">min</span>
                           </p>
                         </div>
@@ -794,43 +798,54 @@ export default function Home() {
                         </div>
                       </div>
                     </section>
-
-                    <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#17243a] p-5">
-                      <div
-                        className="absolute inset-0 bg-cover bg-center opacity-35"
-                        style={{
-                          backgroundImage:
-                            "url('https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=800&q=80')",
-                        }}
-                      />
-                      <div className="relative">
-                        <p className="text-sm font-medium">Small steps.</p>
-                        <p className="text-sm text-amber-300">Big horizons.</p>
-                        <p className="mt-3 text-xs text-slate-300">
-                          One flight at a time.
-                        </p>
-                      </div>
-                    </section>
                   </aside>
                 </div>
               </>
             )}
 
             {page === "Map" && (
-              <section className="rounded-3xl border border-white/10 bg-[#0a1323] p-6 md:p-10">
-                <p className="text-xs tracking-[0.2em] text-amber-300">ROUTE CONTROL</p>
-                <h1 className="mt-3 text-3xl font-semibold">Your world awaits.</h1>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
-                  The interactive globe and real airport coordinates are planned
-                  for the next phase. For now, explore the available focus routes
-                  from your flight deck.
-                </p>
-                <button
-                  onClick={() => setPage("Flight Deck")}
-                  className="mt-6 rounded-xl bg-amber-300 px-5 py-3 text-sm font-semibold text-slate-950"
-                >
-                  Return to flight deck →
-                </button>
+              <section className="space-y-6">
+                <div className="rounded-3xl border border-white/10 bg-[#0a1323] p-6 md:p-10">
+                  <p className="text-xs tracking-[0.2em] text-amber-300">ROUTE CONTROL</p>
+                  <h1 className="mt-3 text-3xl font-semibold">Your world awaits.</h1>
+                  <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
+                    Explore airports on the map. Your departure airport is highlighted in gold.
+                  </p>
+                </div>
+
+                {airportsError ? (
+                  <p className="rounded-xl border border-red-400/20 p-4 text-sm text-red-300">
+                    {airportsError}
+                  </p>
+                ) : airports.length > 0 ? (
+                  <AirportMap
+                    airports={airports}
+                    originCode={airport}
+                    destinationCode={activeFlight?.destination ?? selectedCode ?? undefined}
+                  />
+                ) : (
+                  <p className="rounded-xl border border-white/10 p-6 text-sm text-slate-400">
+                    Loading airport data...
+                  </p>
+                )}
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {destinations.map((destination) => (
+                    <div
+                      key={destination.code}
+                      className="rounded-xl border border-white/10 bg-[#0a1323] p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{airport} → {destination.code}</p>
+                        <span className="text-xs text-slate-500">{destination.country}</span>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-400">{destination.city}</p>
+                      <p className="mt-2 text-sm text-amber-300">
+                        {destination.distance.toLocaleString("en-IN")} km
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </section>
             )}
 
@@ -838,34 +853,18 @@ export default function Home() {
               <section className="rounded-3xl border border-white/10 bg-[#0a1323] p-6 md:p-10">
                 <p className="text-xs tracking-[0.2em] text-amber-300">FLIGHT JOURNAL</p>
                 <h1 className="mt-3 text-3xl font-semibold">Thoughts from the journey.</h1>
-                <p className="mt-3 text-sm text-slate-400">
-                  Your notes from completed flights.
-                </p>
                 <div className="mt-8 space-y-3">
                   {flights.filter((f) => f.note).length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">
-                      No journal entries yet. Complete a flight and save a note
-                      to see it here.
+                      Complete a flight and save a journal note to see it here.
                     </p>
-                  ) : (
-                    flights.filter((f) => f.note).map((flight) => (
-                      <button
-                        key={flight.id}
-                        onClick={() => openFlight(flight)}
-                        className="w-full rounded-xl border border-white/10 p-5 text-left hover:border-amber-300/40"
-                      >
-                        <p className="font-medium">
-                          {flight.origin} → {flight.destination}
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-slate-300">
-                          {flight.note}
-                        </p>
-                        <p className="mt-3 text-xs text-slate-500">
-                          {formatDate(flight.startTime)}
-                        </p>
-                      </button>
-                    ))
-                  )}
+                  ) : flights.filter((f) => f.note).map((flight) => (
+                    <button key={flight.id} onClick={() => openFlight(flight)} className="w-full rounded-xl border border-white/10 p-5 text-left hover:border-amber-300/40">
+                      <p className="font-medium">{flight.origin} → {flight.destination}</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">{flight.note}</p>
+                      <p className="mt-3 text-xs text-slate-500">{formatDate(flight.startTime)}</p>
+                    </button>
+                  ))}
                 </div>
               </section>
             )}
@@ -876,29 +875,14 @@ export default function Home() {
                 <h1 className="mt-3 text-3xl font-semibold">Every flight counts.</h1>
                 <div className="mt-8 space-y-3">
                   {flights.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">
-                      Your flight log is waiting for its first entry.
-                    </p>
+                    <p className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">Your flight log is waiting for its first entry.</p>
                   ) : flights.map((flight) => (
-                    <button
-                      key={flight.id}
-                      onClick={() => openFlight(flight)}
-                      className="flex w-full items-center gap-4 rounded-xl border border-white/10 p-4 text-left hover:border-white/30"
-                    >
-                      <div
-                        className="h-14 w-16 shrink-0 rounded-lg bg-cover bg-center"
-                        style={{ backgroundImage: `url('${routeImage(flight.destination)}')` }}
-                      />
+                    <button key={flight.id} onClick={() => openFlight(flight)} className="flex w-full items-center gap-4 rounded-xl border border-white/10 p-4 text-left hover:border-white/30">
+                      <div className="h-14 w-16 shrink-0 rounded-lg bg-cover bg-center" style={{ backgroundImage: `url('${routeImage(flight.destination)}')` }} />
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium">
-                          {flight.origin} → {flight.destination}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {flight.destinationName} · {flight.duration} min · {flight.distance} km
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {formatDate(flight.startTime)}
-                        </p>
+                        <p className="font-medium">{flight.origin} → {flight.destination}</p>
+                        <p className="mt-1 text-xs text-slate-400">{flight.destinationName} · {flight.duration} min · {flight.distance} km</p>
+                        <p className="mt-1 text-xs text-slate-500">{formatDate(flight.startTime)}</p>
                       </div>
                       <span className="text-xs text-slate-400">{flight.status.toUpperCase()}</span>
                     </button>
@@ -910,11 +894,9 @@ export default function Home() {
             {page === "Miles" && (
               <section className="rounded-3xl border border-white/10 bg-[#0a1323] p-6 md:p-10">
                 <p className="text-xs tracking-[0.2em] text-amber-300">YOUR DISTANCE</p>
-                <h1 className="mt-3 text-4xl font-semibold">
-                  {miles.toLocaleString("en-IN")} km
-                </h1>
+                <h1 className="mt-3 text-4xl font-semibold">{miles.toLocaleString("en-IN")} km</h1>
                 <p className="mt-3 text-sm text-slate-400">
-                  Every successfully completed flight contributes to your total.
+                  Successfully completed flights contribute to your total.
                   Diverted flights earn zero miles.
                 </p>
                 <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -932,9 +914,7 @@ export default function Home() {
               <section className="rounded-3xl border border-white/10 bg-[#0a1323] p-6 md:p-10">
                 <p className="text-xs tracking-[0.2em] text-amber-300">FREQUENT FLYER PROGRAM</p>
                 <h1 className="mt-3 text-3xl font-semibold">Earn your next wings.</h1>
-                <p className="mt-3 text-sm text-slate-400">
-                  Your membership grows with your completed focus distance.
-                </p>
+                <p className="mt-3 text-sm text-slate-400">Your membership grows with completed focus distance.</p>
                 <div className="mt-8 grid gap-4 sm:grid-cols-2">
                   {TIERS.map((tier) => {
                     const unlocked = miles >= tier.threshold;
@@ -956,102 +936,41 @@ export default function Home() {
             {viewedFlight && page === "Flight Deck" && (
               <div className="fixed inset-0 z-50 overflow-y-auto bg-[#050a14]/95 p-4 backdrop-blur-sm md:p-8">
                 <div className="mx-auto max-w-xl py-4">
-                  <button
-                    onClick={() => {
-                      setSelectedFlightId(null);
-                      setNote("");
-                    }}
-                    className="mb-5 text-sm text-slate-400 hover:text-white"
-                  >
+                  <button onClick={() => { setSelectedFlightId(null); setNote(""); }} className="mb-5 text-sm text-slate-400 hover:text-white">
                     ← Back to flight deck
                   </button>
-
                   <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0b1526]">
-                    <div
-                      className="bg-cover bg-center p-6 md:p-8"
-                      style={{
-                        backgroundImage: `linear-gradient(90deg, rgba(6,13,26,.96), rgba(6,13,26,.62)), url('${routeImage(viewedFlight.destination)}')`,
-                      }}
-                    >
-                      <p className="text-xs tracking-[0.25em] text-amber-300">
-                        FLYTIDE AIR · {isLanding ? "ARRIVAL" : "IN FLIGHT"}
-                      </p>
-                      <h1 className="mt-4 text-3xl font-semibold">
-                        {isLanding ? "Welcome to your destination." : "Cruising above the noise."}
-                      </h1>
-                      <p className="mt-2 text-slate-300">
-                        {viewedFlight.origin} → {viewedFlight.destination}
-                      </p>
-                      {!isLanding && (
-                        <p className="mt-6 text-4xl font-semibold tabular-nums text-amber-300">
-                          {formatTime(viewedFlight.endTime - now)}
-                        </p>
-                      )}
+                    <div className="bg-cover bg-center p-6 md:p-8" style={{ backgroundImage: `linear-gradient(90deg, rgba(6,13,26,.96), rgba(6,13,26,.62)), url('${routeImage(viewedFlight.destination)}')` }}>
+                      <p className="text-xs tracking-[0.25em] text-amber-300">FLYTIDE AIR · {isLanding ? "ARRIVAL" : "IN FLIGHT"}</p>
+                      <h1 className="mt-4 text-3xl font-semibold">{isLanding ? "Welcome to your destination." : "Cruising above the noise."}</h1>
+                      <p className="mt-2 text-slate-300">{viewedFlight.origin} → {viewedFlight.destination}</p>
+                      {!isLanding && <p className="mt-6 text-4xl font-semibold tabular-nums text-amber-300">{formatTime(viewedFlight.endTime - now)}</p>}
                     </div>
-
                     <div className="m-5 overflow-hidden rounded-2xl bg-amber-300 text-slate-950 md:m-7">
                       <div className="flex items-center justify-between border-b border-dashed border-slate-950/30 p-5">
-                        <div>
-                          <p className="text-xs font-bold tracking-[0.2em]">FLYTIDE AIR</p>
-                          <h2 className="mt-2 text-2xl font-bold">BOARDING PASS</h2>
-                        </div>
+                        <div><p className="text-xs font-bold tracking-[0.2em]">FLYTIDE AIR</p><h2 className="mt-2 text-2xl font-bold">BOARDING PASS</h2></div>
                         <span className="text-4xl">✈</span>
                       </div>
                       <div className="grid grid-cols-2 gap-5 p-5">
-                        <div>
-                          <p className="text-xs opacity-60">FROM</p>
-                          <p className="mt-1 text-2xl font-bold">{viewedFlight.origin}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs opacity-60">TO</p>
-                          <p className="mt-1 text-2xl font-bold">{viewedFlight.destination}</p>
-                          <p className="text-sm">{viewedFlight.destinationName}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs opacity-60">FOCUS TIME</p>
-                          <p className="mt-1 font-semibold">{viewedFlight.duration} MIN</p>
-                        </div>
-                        <div>
-                          <p className="text-xs opacity-60">{isLanding ? "MILES EARNED" : "POTENTIAL MILES"}</p>
-                          <p className="mt-1 font-semibold">{viewedFlight.distance.toLocaleString("en-IN")} KM</p>
-                        </div>
+                        <div><p className="text-xs opacity-60">FROM</p><p className="mt-1 text-2xl font-bold">{viewedFlight.origin}</p></div>
+                        <div><p className="text-xs opacity-60">TO</p><p className="mt-1 text-2xl font-bold">{viewedFlight.destination}</p><p className="text-sm">{viewedFlight.destinationName}</p></div>
+                        <div><p className="text-xs opacity-60">FOCUS TIME</p><p className="mt-1 font-semibold">{viewedFlight.duration} MIN</p></div>
+                        <div><p className="text-xs opacity-60">{isLanding ? "MILES EARNED" : "POTENTIAL MILES"}</p><p className="mt-1 font-semibold">{viewedFlight.distance.toLocaleString("en-IN")} KM</p></div>
                       </div>
                       <div className="border-t border-dashed border-slate-950/30 p-5">
-                        <p className="text-xs opacity-60">DEPARTURE</p>
-                        <p className="mt-1 text-sm font-medium">{formatDate(viewedFlight.startTime)}</p>
-                        <p className="mt-3 text-xs opacity-60">FLIGHT ID</p>
-                        <p className="mt-1 font-mono text-sm">{viewedFlight.id.slice(0, 8).toUpperCase()}</p>
+                        <p className="text-xs opacity-60">DEPARTURE</p><p className="mt-1 text-sm font-medium">{formatDate(viewedFlight.startTime)}</p>
+                        <p className="mt-3 text-xs opacity-60">FLIGHT ID</p><p className="mt-1 font-mono text-sm">{viewedFlight.id.slice(0, 8).toUpperCase()}</p>
                       </div>
                     </div>
-
                     <div className="p-5 pt-0 md:px-7 md:pb-7">
                       {isLanding ? (
                         <>
-                          <label htmlFor="journal" className="text-sm text-slate-400">
-                            Flight journal (optional)
-                          </label>
-                          <textarea
-                            id="journal"
-                            value={note}
-                            onChange={(event) => setNote(event.target.value)}
-                            maxLength={2000}
-                            placeholder="What did you accomplish during this flight?"
-                            className="mt-2 min-h-28 w-full rounded-xl border border-white/10 bg-[#101827] p-4 text-white outline-none focus:border-amber-300"
-                          />
-                          <button
-                            onClick={() => saveJournal(viewedFlight.id)}
-                            className="mt-3 w-full rounded-xl bg-amber-300 p-4 font-semibold text-slate-950 hover:bg-amber-200"
-                          >
-                            Save journal & return to flight deck
-                          </button>
+                          <label htmlFor="journal" className="text-sm text-slate-400">Flight journal (optional)</label>
+                          <textarea id="journal" value={note} onChange={(event) => setNote(event.target.value)} maxLength={2000} placeholder="What did you accomplish during this flight?" className="mt-2 min-h-28 w-full rounded-xl border border-white/10 bg-[#101827] p-4 text-white outline-none focus:border-amber-300" />
+                          <button onClick={() => saveJournal(viewedFlight.id)} className="mt-3 w-full rounded-xl bg-amber-300 p-4 font-semibold text-slate-950 hover:bg-amber-200">Save journal & return to flight deck</button>
                         </>
                       ) : viewedFlight.status === "flying" ? (
-                        <button
-                          onClick={() => divertFlight(viewedFlight.id)}
-                          className="w-full rounded-xl border border-red-400/30 p-4 text-red-300 hover:bg-red-400/10"
-                        >
-                          Divert flight · End early (no miles)
-                        </button>
+                        <button onClick={() => divertFlight(viewedFlight.id)} className="w-full rounded-xl border border-red-400/30 p-4 text-red-300 hover:bg-red-400/10">Divert flight · End early (no miles)</button>
                       ) : null}
                     </div>
                   </section>
