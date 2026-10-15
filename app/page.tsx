@@ -806,11 +806,21 @@ export default function Home() {
             {page === "Map" && (
               <section className="space-y-6">
                 <div className="rounded-3xl border border-white/10 bg-[#0a1323] p-6 md:p-10">
-                  <p className="text-xs tracking-[0.2em] text-amber-300">ROUTE CONTROL</p>
-                  <h1 className="mt-3 text-3xl font-semibold">Your world awaits.</h1>
+                  <p className="text-xs tracking-[0.2em] text-amber-300">ROUTE CONTROL · PHASES 1–3</p>
+                  <h1 className="mt-3 text-3xl font-semibold">Choose your next destination.</h1>
                   <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
-                    Explore airports on the map. Your departure airport is highlighted in gold.
+                    Click an airport marker or destination card to preview your route. Gold marks departure; green marks arrival.
                   </p>
+                  <div className="mt-5 flex flex-wrap items-center gap-3">
+                    <span className="rounded-lg border border-white/10 px-3 py-2 text-sm">From <strong className="text-amber-300">{airport}</strong></span>
+                    <span className="text-slate-500">→</span>
+                    <span className="rounded-lg border border-white/10 px-3 py-2 text-sm">To <strong className="text-emerald-300">{selectedCode ?? activeFlight?.destination ?? "Choose on map"}</strong></span>
+                    {selectedCode && !activeFlight && (
+                      <button onClick={() => setPage("Flight Deck")} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-200">
+                        Continue to Flight Deck →
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {airportsError ? (
@@ -822,6 +832,9 @@ export default function Home() {
                     airports={airports}
                     originCode={airport}
                     destinationCode={activeFlight?.destination ?? selectedCode ?? undefined}
+                    onSelectDestination={(code) => {
+                      if (code !== airport && !activeFlight) setSelectedCode(code);
+                    }}
                   />
                 ) : (
                   <p className="rounded-xl border border-white/10 p-6 text-sm text-slate-400">
@@ -831,9 +844,14 @@ export default function Home() {
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {destinations.map((destination) => (
-                    <div
+                    <button
                       key={destination.code}
-                      className="rounded-xl border border-white/10 bg-[#0a1323] p-4"
+                      type="button"
+                      onClick={() => {
+                        if (!activeFlight) setSelectedCode(destination.code);
+                      }}
+                      disabled={!!activeFlight}
+                      className={`rounded-xl border bg-[#0a1323] p-4 text-left transition hover:border-amber-300/50 disabled:cursor-not-allowed disabled:opacity-50 ${selectedCode === destination.code ? "border-amber-300/60 bg-amber-300/[0.06]" : "border-white/10"}`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <p className="font-medium">{airport} → {destination.code}</p>
@@ -843,7 +861,8 @@ export default function Home() {
                       <p className="mt-2 text-sm text-amber-300">
                         {destination.distance.toLocaleString("en-IN")} km
                       </p>
-                    </div>
+                      <p className="mt-2 text-xs text-slate-500">{Math.ceil(destination.distance / KM_PER_MINUTE)} min focus · Click to preview</p>
+                    </button>
                   ))}
                 </div>
               </section>
